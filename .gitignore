@@ -1,0 +1,25 @@
+# Python virtual environment
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Environment variables
+.env
+.env.*
+
+# Data
+data/raw/*
+data/processed/*
+*.csv
+*.json
+*.parquet
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
