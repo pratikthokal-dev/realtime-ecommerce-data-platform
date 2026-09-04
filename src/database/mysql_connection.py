@@ -8,6 +8,10 @@ load_dotenv()
 
 
 def get_mysql_connection():
+    """
+    Create and return a connection to the MySQL database.
+    """
+
     return mysql.connector.connect(
         host=os.getenv("MYSQL_HOST"),
         port=int(os.getenv("MYSQL_PORT", 3306)),
@@ -15,13 +19,3 @@ def get_mysql_connection():
         password=os.getenv("MYSQL_PASSWORD"),
         database=os.getenv("MYSQL_DATABASE")
     )
-
-
-if __name__ == "__main__":
-    connection = get_mysql_connection()
-
-    if connection.is_connected():
-        print("MySQL connection successful!")
-        print("Database:", connection.database)
-
-    connection.close()
