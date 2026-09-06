@@ -23,3 +23,8 @@ data/processed/*
 
 # Logs
 *.log
+
+# Spark generated data and metadata
+data/bronze/
+data/silver/
+data/spark-checkpoints/

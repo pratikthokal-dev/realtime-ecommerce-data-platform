@@ -19,3 +19,4 @@ def get_mysql_connection():
         password=os.getenv("MYSQL_PASSWORD"),
         database=os.getenv("MYSQL_DATABASE")
     )
+
