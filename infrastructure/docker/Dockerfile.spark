@@ -13,5 +13,6 @@ RUN mkdir -p /opt/spark/jars && \
     curl -L -o /opt/spark/jars/commons-pool2-2.12.1.jar \
     https://repo1.maven.org/maven2/org/apache/commons/commons-pool2/2.12.1/commons-pool2-2.12.1.jar
 
-RUN curl -L -o /opt/spark/jars/iceberg-spark-runtime-4.0_2.13-1.8.1.jar \
-    https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-4.0_2.13/1.8.1/iceberg-spark-runtime-4.0_2.13-1.8.1.jar
+RUN curl -fL --retry 3 \
+    -o /opt/spark/jars/iceberg-spark-runtime-4.0_2.13-1.10.1.jar \
+   https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-4.0_2.13/1.10.1/iceberg-spark-runtime-4.0_2.13-1.10.1.jar

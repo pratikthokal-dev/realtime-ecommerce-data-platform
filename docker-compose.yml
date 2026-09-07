@@ -87,3 +87,35 @@ services:
       /opt/project/spark/jobs/order_streaming.py
     depends_on:
     - kafka
+  
+  airflow:
+    image: ecommerce-airflow:2.10.5
+    container_name: ecommerce-airflow
+    ports:
+      - "8082:8080"
+
+    environment:
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow.db
+      
+
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./:/opt/project
+
+    command: >
+      bash -c "
+      airflow db migrate &&
+      airflow users create
+      --username admin
+      --password admin
+      --firstname Admin
+      --lastname User
+      --role Admin
+      --email admin@example.com || true &&
+      airflow webserver
+      "

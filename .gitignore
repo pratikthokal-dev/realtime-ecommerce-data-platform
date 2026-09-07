@@ -28,3 +28,7 @@ data/processed/*
 data/bronze/
 data/silver/
 data/spark-checkpoints/
+
+# Generated data and pipeline outputs
+data/gold/
+data/iceberg/
