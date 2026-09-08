@@ -32,3 +32,6 @@ data/spark-checkpoints/
 # Generated data and pipeline outputs
 data/gold/
 data/iceberg/
+
+# Airflow metadata
+airflow.db*
