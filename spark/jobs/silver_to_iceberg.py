@@ -4,7 +4,11 @@ from pyspark.sql import SparkSession
 spark = (
     SparkSession.builder
     .appName("SilverToIceberg")
-    .master("local[*]")
+    .master("spark://spark:7077")
+    .config(
+        "spark.jars",
+        "/opt/airflow/jars/iceberg-spark-runtime-4.0_2.13-1.10.1.jar"
+    )
     .config(
         "spark.sql.catalog.local",
         "org.apache.iceberg.spark.SparkCatalog"

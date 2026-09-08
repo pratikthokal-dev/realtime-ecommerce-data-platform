@@ -7,7 +7,7 @@ def run_gold_quality_checks():
 
     # Load Gold data
     gold_df = pd.read_parquet(
-        "data/gold/daily_sales"
+        "/opt/project/data/gold/daily_sales"
     )
 
     context = gx.get_context()

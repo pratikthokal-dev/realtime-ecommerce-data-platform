@@ -7,8 +7,8 @@ def run_quality_checks():
 
     # Load Silver data
     silver_df = pd.read_parquet(
-        "data/silver/orders"
-    )
+    "/opt/project/data/silver/orders"
+)
 
     context = gx.get_context()
 

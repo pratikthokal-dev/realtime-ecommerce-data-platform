@@ -74,6 +74,8 @@ services:
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark:7077
     depends_on:
     - spark
+    volumes:
+      - ./:/opt/project
   
   spark-streaming:
     image: ecommerce-spark:4.0.1
@@ -89,6 +91,9 @@ services:
     - kafka
   
   airflow:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.airflow
     image: ecommerce-airflow:2.10.5
     container_name: ecommerce-airflow
     ports:
@@ -116,6 +121,7 @@ services:
       --firstname Admin
       --lastname User
       --role Admin
-      --email admin@example.com || true &&
-      airflow webserver
+      --email admin@example.com || true;
+      airflow scheduler &
+      exec airflow webserver
       "
