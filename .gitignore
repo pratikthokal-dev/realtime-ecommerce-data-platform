@@ -35,3 +35,6 @@ data/iceberg/
 
 # Airflow metadata
 airflow.db*
+
+#debezium-mysql-connector.json
+infrastructure/docker/debezium-mysql-connector.json
