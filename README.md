@@ -37,6 +37,8 @@ orchestration**.
 - Airflow pipeline orchestration
 - Dockerized data engineering infrastructure
 
+---
+
 ## 🏗️ Architecture
 
 The platform uses an event-driven CDC pipeline to transform transactional
@@ -101,9 +103,9 @@ Gold Analytics
 Power BI
 ```
 
-## 🧱 Data Architecture
+---
 
-> Bronze, Silver, Iceberg and Gold architecture will be documented here.
+## 🧱 Data Architecture
 
 The platform follows a **Medallion-style architecture** to progressively
 transform raw CDC events into reliable, analytics-ready datasets.
@@ -141,12 +143,20 @@ transform raw CDC events into reliable, analytics-ready datasets.
                          │
                          ▼
                     Power BI
+```
 
+### Data Layers
 
+| Layer | Purpose | Format / Technology |
+|---|---|---|
+| **Bronze** | Stores raw Debezium CDC events with Kafka metadata | Parquet |
+| **Silver** | Cleans, normalizes, and prepares CDC records for downstream processing | Parquet |
+| **Current State** | Applies incremental `INSERT`, `UPDATE`, and `DELETE` operations to maintain the latest order state | Apache Iceberg |
+| **Gold** | Produces analytics-ready business aggregates such as daily sales metrics | Apache Iceberg |
+
+---
 
 ## 🚀 Key Engineering Features
-
-> Major engineering capabilities will be documented here.
 
 - **Change Data Capture:** Captures MySQL `INSERT`, `UPDATE`, `DELETE`, and
   snapshot events using Debezium and publishes them to Kafka.
@@ -172,10 +182,9 @@ transform raw CDC events into reliable, analytics-ready datasets.
 - **Containerized Infrastructure:** Runs the core streaming and processing
   infrastructure using Docker and Docker Compose.
 
+---
 
 ## 🛠️ Technology Stack
-
-> Technology stack will be documented here.
 
 | Layer | Technologies |
 |---|---|
@@ -190,10 +199,10 @@ transform raw CDC events into reliable, analytics-ready datasets.
 | **Analytics** | Power BI |
 | **Development** | Python, SQL, Git, GitHub |
 
+---
 
 ## 🔬 Pipeline Results
 
-> End-to-end testing and validation will be documented here.
 The pipeline was validated using real MySQL CDC operations and incremental
 processing.
 
@@ -218,51 +227,67 @@ The Gold layer produces analytics-ready daily metrics including:
 - Total revenue
 - Average order value
 
+---
 
 ## 📊 Analytics
 
-The Gold layer produces analytics-ready datasets designed for business
-intelligence and visualization.
+The Gold layer provides analytics-ready datasets for business intelligence
+and visualization.
+
+### 📌 Gold Analytics Dataset
 
 The primary analytical dataset is:
 
-- **`daily_sales`** — daily order volume, unique customers, total revenue,
-  and average order value.
+| Dataset | Metrics |
+|---|---|
+| `daily_sales` | Total orders, unique customers, total revenue, average order value |
 
-### Power BI Visualization
-
-The Gold Iceberg datasets will be connected to **Power BI** to build an
-interactive analytics dashboard.
-
-Planned visualizations include:
-
-- 📈 Daily revenue trends
-- 📦 Daily order volume
-- 👥 Unique customers
-- 💰 Average order value
-- 📊 Sales performance over time
+### 🔄 Analytics Flow
 
 ```text
-MySQL
-  ↓
-Debezium → Kafka
-  ↓
-Spark
-  ↓
-Bronze → Silver
-  ↓
-Iceberg Current State
-  ↓
-Gold: daily_sales
-  ↓
-Power BI
-  ↓
-Interactive Analytics Dashboard
+┌─────────────────────────┐
+│     Apache Iceberg      │
+│                         │
+│       Gold Layer        │
+│      daily_sales        │
+└────────────┬────────────┘
+             │
+             ▼
+┌─────────────────────────┐
+│        Power BI         │
+│                         │
+│     Data Connection     │
+└────────────┬────────────┘
+             │
+             ▼
+┌─────────────────────────┐
+│   Interactive Dashboard │
+│                         │
+│  📈 Revenue Trends      │
+│  📦 Order Volume        │
+│  👥 Customers           │
+│  💰 Average Order Value │
+│  📊 Sales Performance   │
+└─────────────────────────┘
+```
 
+### 📈 Planned Visualizations
+
+The Power BI dashboard will provide:
+
+- **Revenue Trends** — Track daily revenue over time
+- **Order Volume** — Monitor daily order activity
+- **Customer Analysis** — Analyze unique customer activity
+- **Average Order Value** — Monitor changes in average transaction value
+- **Sales Performance** — Compare key sales metrics across time
+
+> **Implementation Status:** The Gold analytics layer is implemented.
+> Power BI integration and dashboard development will be completed as the
+> next visualization phase of the project.
+
+---
 
 ## 📂 Project Structure
-
-> Repository structure will be documented here.
 
 ```text
 realtime-ecommerce-data-platform/
@@ -309,6 +334,7 @@ realtime-ecommerce-data-platform/
 | `infrastructure` | Docker infrastructure configuration |
 | `data` | Local Bronze/Silver/processing data |
 
+---
 
 ## Quick Start
 
@@ -375,11 +401,9 @@ DAG.
 Changes made to the MySQL `orders` table are captured by Debezium and
 processed through the CDC pipeline.
 
-
+---
 
 ## ⚙️ Engineering Challenges
-
-> Important implementation challenges and solutions will be documented here.
 
 ### 1. Incremental CDC State Management
 
@@ -419,11 +443,13 @@ Data Quality
 Iceberg CDC MERGE
     ↓
 Gold Aggregation
+```
 
+This makes the processing workflow reproducible and easier to monitor.
+
+---
 
 ## 📈 Future Improvements
-
-> Future improvements will be documented here.
 
 - **Cloud Lakehouse:** Migrate the storage and catalog layer to AWS S3,
   AWS Glue, and Amazon Athena.
@@ -442,6 +468,8 @@ Gold Aggregation
 
 - **Production Observability:** Add structured logging, pipeline metrics,
   data-lineage tracking, and operational dashboards.
+
+---
 
 ## 👨‍💻 Author
 
