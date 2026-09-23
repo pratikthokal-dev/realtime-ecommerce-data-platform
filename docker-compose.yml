@@ -74,7 +74,10 @@ services:
       - kafka
   
   spark:
-    image: apache/spark:4.0.1
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.spark
+    image: ecommerce-spark:4.0.1
     container_name: ecommerce-spark
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
     ports:
@@ -103,7 +106,7 @@ services:
       /opt/spark/bin/spark-submit
       --master local[*]
       --jars /opt/spark/jars/spark-sql-kafka-0-10_2.13-4.0.1.jar,/opt/spark/jars/spark-token-provider-kafka-0-10_2.13-4.0.1.jar
-      /opt/project/spark/jobs/order_streaming.py
+      /opt/project/spark/jobs/debezium_orders_streaming.py
     depends_on:
     - kafka
   
