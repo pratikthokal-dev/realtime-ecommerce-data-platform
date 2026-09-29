@@ -14,53 +14,60 @@
 
 An end-to-end **data engineering platform** for processing real-time
 e-commerce order data using **Change Data Capture (CDC)**, event streaming,
-distributed processing, and a lakehouse architecture.
+distributed processing, lakehouse storage, data-quality validation, workflow
+orchestration, and business intelligence.
 
 The platform captures row-level changes from **MySQL** using **Debezium**,
-streams CDC events through **Apache Kafka**, processes them with
-**Spark Structured Streaming**, and maintains analytical datasets using
-**Apache Iceberg**.
+publishes CDC events through **Apache Kafka**, processes them with
+**Apache Spark**, validates Silver-layer data using **PySpark-based quality
+checks**, and maintains the latest order state in **Apache Iceberg**.
 
-The pipeline follows a **Bronze → Silver → Gold** architecture with
-**incremental CDC processing, data-quality validation, and Airflow
-orchestration**.
+The pipeline follows a **Bronze → Silver → Current State → Gold** architecture.
+**Apache Airflow** orchestrates the complete workflow from CDC processing
+through validation, Iceberg state management, and Gold analytics generation.
+
+The Gold layer produces daily sales metrics that are exposed to **Power BI**
+through the Spark SQL/Thrift serving layer. The project also includes
+Trino/Nessie infrastructure, pipeline monitoring utilities, automated tests,
+and a fully containerized local development environment.
 
 ### What this project demonstrates
 
 - Real-time MySQL CDC with Debezium
 - Event streaming with Apache Kafka
-- Spark Structured Streaming
-- Bronze/Silver/Gold data architecture
-- Incremental processing using Kafka offsets
-- Iceberg-based current-state data management
-- Data-quality validation
-- Airflow pipeline orchestration
+- Spark Structured Streaming and PySpark transformations
+- Bronze/Silver/Gold lakehouse architecture
+- Incremental CDC processing using Kafka offsets
+- Apache Iceberg current-state management with CDC MERGE operations
+- PySpark-based data-quality validation
+- Airflow DAG orchestration with dependent processing stages
+- Gold-layer daily sales aggregation
+- Spark Thrift Server connectivity for BI workloads
+- Power BI analytics integration
+- Trino/Nessie analytical infrastructure
+- Pipeline monitoring and automated testing
 - Dockerized data engineering infrastructure
-
 ---
 
 ## 🏗️ Architecture
 
-The platform uses an event-driven CDC pipeline to transform transactional
-e-commerce data into analytics-ready lakehouse datasets.
-
 ```mermaid
 flowchart LR
-
     A[(MySQL<br/>E-Commerce DB)]
     B[Debezium<br/>CDC]
     C[(Apache Kafka<br/>orders_v2)]
-    D[Apache Spark<br/>Structured Streaming]
 
+    D[Apache Spark<br/>Structured Streaming]
     E[(Bronze<br/>Raw CDC)]
     F[(Silver<br/>Clean CDC)]
-
-    G[Data Quality<br/>Validation]
+    G[PySpark<br/>Data Quality]
 
     H[(Apache Iceberg<br/>orders_current)]
 
+    P[Gold Prepare<br/>Current-State Snapshot]
     I[(Gold<br/>daily_sales)]
 
+    T[Spark Thrift Server]
     J[Power BI<br/>Analytics]
 
     K[Apache Airflow<br/>Orchestration]
@@ -72,13 +79,17 @@ flowchart LR
     E --> F
     F --> G
     G -->|Validated CDC| H
-    H --> I
-    I --> J
+
+    H -->|Current-State Orders| P
+    P -->|Intermediate Parquet| I
+    I --> T
+    T --> J
 
     K -.->|Orchestrates| D
-    K -.->|Validates| G
-    K -.->|Runs MERGE| H
-    K -.->|Builds Gold| I
+    K -.->|Runs| G
+    K -.->|Runs CDC MERGE| H
+    K -.->|Runs Gold Preparation| P
+    K -.->|Runs Gold Aggregation| I
 ```
 
 ### Data Flow
@@ -98,22 +109,26 @@ Data Quality Validation
   ↓
 Iceberg Current State
   ↓
-Gold Analytics
+Gold Preparation
+  ↓
+Gold Daily Sales
+  ↓
+Spark Thrift Server
   ↓
 Power BI
 ```
+
 
 ---
 
 ## 🧱 Data Architecture
 
-The platform follows a **Medallion-style architecture** to progressively
-transform raw CDC events into reliable, analytics-ready datasets.
+The platform follows a **Medallion-style architecture** to progressively transform raw CDC events into reliable, analytics-ready datasets.
 
 ```text
                     MySQL CDC Events
-                          │
-                          ▼
+                           │
+                           ▼
               ┌──────────────────────┐
               │       Bronze         │
               │   Raw CDC Events     │
@@ -130,8 +145,8 @@ transform raw CDC events into reliable, analytics-ready datasets.
                          ▼
               ┌──────────────────────┐
               │   Iceberg Current    │
-              │     orders_current   │
-              │   Latest Order State │
+              │    orders_current    │
+              │  Latest Order State  │
               └──────────┬───────────┘
                          │
                          ▼
@@ -142,92 +157,104 @@ transform raw CDC events into reliable, analytics-ready datasets.
               └──────────┬───────────┘
                          │
                          ▼
-                    Power BI
+              ┌──────────────────────┐
+              │  Spark Thrift Server │
+              │    BI Serving Layer  │
+              └──────────┬───────────┘
+                         │
+                         ▼
+                      Power BI
 ```
 
 ### Data Layers
 
-| Layer | Purpose | Format / Technology |
-|---|---|---|
-| **Bronze** | Stores raw Debezium CDC events with Kafka metadata | Parquet |
-| **Silver** | Cleans, normalizes, and prepares CDC records for downstream processing | Parquet |
-| **Current State** | Applies incremental `INSERT`, `UPDATE`, and `DELETE` operations to maintain the latest order state | Apache Iceberg |
-| **Gold** | Produces analytics-ready business aggregates such as daily sales metrics | Apache Iceberg |
+| Layer             | Purpose                                                                                            | Format / Technology |
+| ----------------- | -------------------------------------------------------------------------------------------------- | ------------------- |
+| **Bronze**        | Stores raw Debezium CDC events with Kafka metadata                                                 | Parquet             |
+| **Silver**        | Cleans, normalizes, and prepares CDC records for downstream processing                             | Parquet             |
+| **Current State** | Applies incremental `INSERT`, `UPDATE`, and `DELETE` operations to maintain the latest order state | Apache Iceberg      |
+| **Gold**          | Produces analytics-ready business aggregates such as daily sales metrics                           | Apache Iceberg      |
+| **Serving**       | Exposes Gold analytics to the BI layer through SQL connectivity                                    | Spark Thrift Server |
 
----
 
 ## 🚀 Key Engineering Features
 
-- **Change Data Capture:** Captures MySQL `INSERT`, `UPDATE`, `DELETE`, and
-  snapshot events using Debezium and publishes them to Kafka.
+* **Change Data Capture:** Captures MySQL `INSERT`, `UPDATE`, `DELETE`, and snapshot events using Debezium and publishes them to Kafka.
 
-- **Real-Time Processing:** Processes CDC events using Spark Structured
-  Streaming and persists raw events in the Bronze layer.
+* **Real-Time Processing:** Processes CDC events using Spark Structured Streaming and persists raw events in the Bronze layer.
 
-- **Medallion Architecture:** Separates raw, cleaned, and analytical data
-  across Bronze, Silver, and Gold layers.
+* **Medallion Architecture:** Separates raw, cleaned, current-state, and analytical data across Bronze, Silver, Iceberg Current State, and Gold layers.
 
-- **Incremental CDC Processing:** Uses Kafka offsets as a persistent
-  watermark to process only newly arrived CDC events.
+* **Incremental CDC Processing:** Uses Kafka offsets as a persistent watermark to process only newly arrived CDC events.
 
-- **Iceberg Current-State Management:** Uses Apache Iceberg `MERGE`
-  operations to apply CDC changes and maintain the latest order state.
+* **Iceberg Current-State Management:** Uses Apache Iceberg `MERGE` operations to apply CDC changes and maintain the latest order state.
 
-- **Data Quality:** Validates processed data before it reaches downstream
-  analytical datasets.
+* **Data Quality Validation:** Uses PySpark-based validation checks to detect missing fields, invalid values, invalid CDC operations, and duplicate Kafka events before downstream processing.
 
-- **Pipeline Orchestration:** Uses Apache Airflow to coordinate Silver
-  processing, quality validation, Iceberg updates, and Gold aggregation.
+* **Airflow Orchestration:** Uses Apache Airflow to coordinate the complete pipeline from Silver processing through data-quality validation, Iceberg updates, and Gold analytics.
 
-- **Containerized Infrastructure:** Runs the core streaming and processing
-  infrastructure using Docker and Docker Compose.
+* **Separated Gold Processing:** Uses dedicated Gold preparation and aggregation jobs to isolate current-state reads from analytical aggregation workloads.
 
----
+* **BI Serving Layer:** Uses Spark Thrift Server to expose Gold analytics for SQL-based BI consumption.
+
+* **Power BI Integration:** Connects Power BI to the `daily_sales_powerbi` view backed by the Gold Iceberg table.
+
+* **Pipeline Monitoring:** Includes a pipeline health-check utility for monitoring the data platform.
+
+* **Automated Testing:** Includes automated tests for validating important CDC pipeline behavior.
+
+* **Containerized Infrastructure:** Runs the core streaming, processing, orchestration, and serving infrastructure using Docker and Docker Compose.
+
 
 ## 🛠️ Technology Stack
 
-| Layer | Technologies |
-|---|---|
-| **Source** | MySQL |
-| **CDC** | Debezium |
-| **Streaming** | Apache Kafka |
-| **Processing** | Apache Spark, PySpark, Structured Streaming |
-| **Storage** | Parquet, Apache Iceberg |
-| **Data Quality** | Great Expectations |
-| **Orchestration** | Apache Airflow |
-| **Infrastructure** | Docker, Docker Compose |
-| **Analytics** | Power BI |
-| **Development** | Python, SQL, Git, GitHub |
+| Layer                    | Technologies                                         |
+| ------------------------ | ---------------------------------------------------- |
+| **Source**               | MySQL                                                |
+| **CDC**                  | Debezium                                             |
+| **Streaming**            | Apache Kafka                                         |
+| **Processing**           | Apache Spark, PySpark, Structured Streaming          |
+| **Storage**              | Parquet, Apache Iceberg                              |
+| **Data Quality**         | PySpark-based validation                             |
+| **Orchestration**        | Apache Airflow                                       |
+| **Infrastructure**       | Docker, Docker Compose, Trino / Nessie configuration |
+| **Analytics / BI**       | Power BI, Spark Thrift Server                        |
+| **Monitoring / Testing** | Python health checks, automated pipeline tests       |
+| **Development**          | Python, SQL, Git, GitHub                             |
 
 ---
 
 ## 🔬 Pipeline Results
 
-The pipeline was validated using real MySQL CDC operations and incremental
-processing.
+The pipeline was validated using real MySQL CDC operations and incremental processing.
 
-| Validation | Result |
-|---|---|
-| Initial CDC snapshot | ✅ Processed |
-| New order insertion | ✅ Captured and processed |
-| Order update | ✅ Applied to Iceberg |
-| Order deletion | ✅ Propagated to current state |
-| Kafka offset watermarking | ✅ Incremental processing |
-| Silver data validation | ✅ Passed |
-| Iceberg current-state table | ✅ Maintained |
-| Gold daily-sales aggregation | ✅ Generated |
-| Airflow pipeline | ✅ Completed successfully |
+| Validation                        | Result                        |
+| --------------------------------- | ----------------------------- |
+| Initial CDC snapshot              | ✅ Processed                   |
+| New order insertion               | ✅ Captured and processed      |
+| Order update                      | ✅ Applied to Iceberg          |
+| Order deletion                    | ✅ Propagated to current state |
+| Kafka offset watermarking         | ✅ Incremental processing      |
+| Silver data validation            | ✅ Passed                      |
+| Iceberg current-state table       | ✅ Maintained                  |
+| Gold preparation                  | ✅ Completed successfully      |
+| Gold daily-sales aggregation      | ✅ Generated                   |
+| Spark Thrift Server serving layer | ✅ Verified                    |
+| Power BI integration              | ✅ Connected and refreshed     |
+| Airflow end-to-end pipeline       | ✅ Completed successfully      |
+
 
 ### Gold Analytics
 
-The Gold layer produces analytics-ready daily metrics including:
+The Gold layer provides business-ready daily sales metrics:
 
-- Total orders
-- Unique customers
-- Total revenue
-- Average order value
+* **Total orders**
+* **Unique customers**
+* **Total revenue**
+* **Average order value**
 
----
+These metrics are stored in the Iceberg `daily_sales` table and exposed to Power BI through the Spark Thrift Server.
+
 
 ## 📊 Analytics
 
@@ -248,44 +275,42 @@ The primary analytical dataset is:
 ┌─────────────────────────┐
 │     Apache Iceberg      │
 │                         │
-│       Gold Layer        │
-│      daily_sales        │
+│   Gold: daily_sales     │
+└────────────┬────────────┘
+             │
+             ▼
+┌─────────────────────────┐
+│   Spark Thrift Server   │
+│                         │
+│      BI Serving         │
 └────────────┬────────────┘
              │
              ▼
 ┌─────────────────────────┐
 │        Power BI         │
 │                         │
-│     Data Connection     │
+│   Data Connection       │
 └────────────┬────────────┘
              │
              ▼
 ┌─────────────────────────┐
-│   Interactive Dashboard │
+│  Interactive Dashboard  │
 │                         │
 │  📈 Revenue Trends      │
 │  📦 Order Volume        │
-│  👥 Customers           │
+│  👥 Customer Analysis   │
 │  💰 Average Order Value │
 │  📊 Sales Performance   │
 └─────────────────────────┘
 ```
+### 📊 Power BI Dashboard
 
-### 📈 Planned Visualizations
+The Gold `daily_sales` dataset is consumed through Spark Thrift Server and
+visualized in Power BI.
 
-The Power BI dashboard will provide:
+![Power BI E-Commerce Analytics Dashboard](assets/Ecommerece_dashboard.png)
 
-- **Revenue Trends** — Track daily revenue over time
-- **Order Volume** — Monitor daily order activity
-- **Customer Analysis** — Analyze unique customer activity
-- **Average Order Value** — Monitor changes in average transaction value
-- **Sales Performance** — Compare key sales metrics across time
-
-> **Implementation Status:** The Gold analytics layer is implemented.
-> Power BI integration and dashboard development will be completed as the
-> next visualization phase of the project.
-
----
+[**Download Power BI Dashboard (.pbix)**](assets/realtime-ecommerce-platform-dashboard.pbix)
 
 ## 📂 Project Structure
 
@@ -306,18 +331,29 @@ realtime-ecommerce-data-platform/
 │
 ├── quality/
 │   └── checks/
-│       ├── validate_silver.py
-│       └── gold_quality.py
+│       └── validate_silver.py
 │
 ├── src/
 │   ├── database/
 │   └── generators/
 │
 ├── infrastructure/
-│   └── docker/
+│   ├── docker/
+│   └── trino/
+│       ├── catalog/
+│       ├── config.properties
+│       ├── jvm.config
+│       └── node.properties
+│
+├── monitoring/
+│   └── pipeline_health_check.py
+│
+├── tests/
+│   └── test_cdc_pipeline.py
 │
 ├── data/
 │
+├── reset_cdc_watermark.py
 ├── docker-compose.yml
 ├── requirements.txt
 ├── .gitignore
@@ -326,14 +362,16 @@ realtime-ecommerce-data-platform/
 
 ### Core Components
 
-| Component | Responsibility |
-|---|---|
-| `airflow/dags` | Pipeline orchestration |
-| `spark/jobs` | Streaming, transformation, CDC merge and Gold processing |
-| `quality/checks` | Data-quality validation |
-| `src` | Database utilities and data generation |
-| `infrastructure` | Docker infrastructure configuration |
-| `data` | Local Bronze/Silver/processing data |
+| Component        | Responsibility                                                   |
+| ---------------- | ---------------------------------------------------------------- |
+| `airflow/dags`   | End-to-end pipeline orchestration                                |
+| `spark/jobs`     | Streaming, Silver transformation, CDC merge, and Gold processing |
+| `quality/checks` | PySpark-based data-quality validation                            |
+| `src`            | Database utilities and test-data generation                      |
+| `infrastructure` | Docker and Trino configuration                                   |
+| `monitoring`     | Pipeline health checks                                           |
+| `tests`          | Automated pipeline tests                                         |
+| `data`           | Local Bronze, Silver, Gold, and Iceberg data                     |
 
 ---
 
@@ -408,27 +446,21 @@ processed through the CDC pipeline.
 
 ### 1. Incremental CDC State Management
 
-CDC events are continuously produced by Kafka, so reprocessing the entire
-dataset on every pipeline run would be inefficient.
+CDC events are continuously produced by Kafka, so reprocessing the entire dataset on every pipeline run would be inefficient.
 
-The pipeline maintains a persistent **Kafka offset watermark** and processes
-only CDC events that arrived after the last successfully processed offset.
+The pipeline maintains a persistent **Kafka offset watermark** and processes only CDC events that arrived after the last successfully processed offset.
 
 ### 2. Applying CDC Operations to Current State
 
-Debezium produces different event types such as `INSERT`, `UPDATE`, `DELETE`,
-and snapshot events.
+Debezium produces different event types such as `INSERT`, `UPDATE`, `DELETE`, and snapshot events.
 
-The Iceberg layer uses conditional `MERGE` logic to apply these events and
-maintain a reliable `orders_current` table representing the latest state.
+The Iceberg layer uses conditional `MERGE` logic to apply these events and maintain the `orders_current` table representing the latest state of each order.
 
 ### 3. Data Quality Across Pipeline Layers
 
-Data is validated after Silver processing before being used by downstream
-analytical datasets.
+Data is validated after Silver processing before being used by downstream analytical datasets.
 
-This helps detect invalid records before they propagate into the Iceberg
-current-state and Gold analytical layers.
+PySpark validation checks required fields, order values, statuses, CDC operations, and duplicate Kafka events to prevent invalid records from propagating into the Iceberg and Gold layers.
 
 ### 4. Dependency-Based Pipeline Orchestration
 
@@ -436,39 +468,35 @@ The complete processing flow contains multiple dependent stages.
 
 Airflow coordinates the pipeline as:
 
-```text
+```text id="yzz2rj"
 CDC Silver
     ↓
 Data Quality
     ↓
 Iceberg CDC MERGE
     ↓
-Gold Aggregation
+Gold Preparation
+    ↓
+Gold Daily Sales
 ```
 
-This makes the processing workflow reproducible and easier to monitor.
+This makes the processing workflow reproducible, dependency-aware, and easier to monitor.
 
 ---
 
 ## 📈 Future Improvements
 
-- **Cloud Lakehouse:** Migrate the storage and catalog layer to AWS S3,
-  AWS Glue, and Amazon Athena.
+* **Cloud Lakehouse:** Migrate the local lakehouse to AWS S3 with AWS Glue and Amazon Athena.
 
-- **Cloud Monitoring:** Add centralized monitoring, alerting, and pipeline
-  observability using AWS services.
+* **Cloud Monitoring:** Add centralized monitoring, alerting, and operational observability using AWS services.
 
-- **CI/CD:** Introduce automated testing and deployment workflows using
-  GitHub Actions.
+* **CI/CD:** Introduce automated build, testing, and deployment workflows using GitHub Actions.
 
-- **Failure Recovery:** Add a dedicated dead-letter queue (DLQ) and
-  improved recovery mechanisms for failed CDC events.
+* **Failure Recovery:** Add a dedicated Dead-Letter Queue (DLQ) and stronger recovery mechanisms for failed CDC events.
 
-- **Automated Testing:** Expand unit, integration, and end-to-end testing
-  across the CDC, transformation, and data-quality layers.
+* **Expanded Testing:** Extend the existing automated tests with broader unit, integration, and end-to-end coverage.
 
-- **Production Observability:** Add structured logging, pipeline metrics,
-  data-lineage tracking, and operational dashboards.
+* **Production Observability:** Add structured logging, pipeline metrics, data lineage, and operational dashboards.
 
 ---
 
@@ -476,4 +504,8 @@ This makes the processing workflow reproducible and easier to monitor.
 
 **Pratik Thokal**
 
-Data Engineering • Big Data • Cloud • Python • SQL
+B.E. Information Technology Student | Aspiring Data Engineer
+
+* GitHub: [pratikthokal-dev](https://github.com/pratikthokal-dev)
+* Focus Areas: Data Engineering, Big Data, Cloud, SQL, Python, Apache Spark
+
