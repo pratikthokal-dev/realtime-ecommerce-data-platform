@@ -1,106 +1,198 @@
-import sys
-import pandas as pd
-import great_expectations as gx
-
-
-def run_quality_checks():
-
-    # Load Silver data
-    silver_df = pd.read_parquet(
-    "/opt/project/data/silver/orders"
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import (
+    col,
+    count,
+    sum as spark_sum,
+    upper
 )
 
-    context = gx.get_context()
 
-    data_source = context.data_sources.add_pandas(
-        name="silver_quality_source"
-    )
+SILVER_PATH = "/opt/project/data/silver/debezium_orders"
 
-    data_asset = data_source.add_dataframe_asset(
-        name="silver_orders"
-    )
 
-    batch_definition = data_asset.add_batch_definition_whole_dataframe(
-        "silver_batch"
-    )
+def main():
+    spark = (
+        SparkSession.builder
+        .master("local[2]")
+        .appName("ValidateSilverData")
+        .config("spark.driver.memory", "512m")
+        .config("spark.sql.shuffle.partitions", "2")
+        .getOrCreate()
+)
 
-    batch = batch_definition.get_batch(
-        batch_parameters={
-            "dataframe": silver_df
-        }
-    )
+    silver_df = spark.read.parquet(SILVER_PATH)
 
-    expectations = [
-        gx.expectations.ExpectColumnValuesToNotBeNull(
-            column="order_id"
-        ),
-        gx.expectations.ExpectColumnValuesToNotBeNull(
-            column="customer_id"
-        ),
-        gx.expectations.ExpectColumnValuesToNotBeNull(
-            column="amount"
-        ),
-        gx.expectations.ExpectColumnValuesToBeBetween(
-            column="amount",
-            min_value=0
-        ),
-        gx.expectations.ExpectColumnValuesToBeInSet(
-            column="status",
-            value_set=[
-                "PLACED",
-                "CONFIRMED",
-                "SHIPPED",
-                "DELIVERED",
-                "CANCELLED"
-            ]
-        ),
-        gx.expectations.ExpectColumnValuesToNotBeNull(
-            column="timestamp"
-        ),
-        gx.expectations.ExpectColumnValuesToNotBeNull(
-            column="event_date"
-        )
+    total_records = silver_df.count()
+
+    print("\n" + "=" * 60)
+    print("SILVER DATA QUALITY VALIDATION")
+    print("=" * 60)
+
+    print(f"Total Silver records: {total_records}")
+
+    if total_records == 0:
+        raise ValueError("Silver layer contains no records.")
+
+    # ---------------------------------------------------------
+    # 1. Required-field validation
+    # ---------------------------------------------------------
+
+    required_columns = [
+        "order_id",
+        "customer_id",
+        "order_status",
+        "operation",
+        "kafka_topic",
+        "kafka_partition",
+        "kafka_offset",
     ]
 
-    passed = 0
-    failed = 0
+    print("\n[1] Required-field validation")
 
-    print("\n======================================")
-    print(" SILVER DATA QUALITY VALIDATION")
-    print("======================================")
+    for column_name in required_columns:
+        null_count = silver_df.filter(
+            col(column_name).isNull()
+        ).count()
 
-    for expectation in expectations:
+        print(f"{column_name}: {null_count} null records")
 
-        result = batch.validate(expectation)
+        if null_count > 0:
+            raise ValueError(
+                f"Data quality failed: {column_name} contains NULL values."
+            )
 
-        name = expectation.__class__.__name__
+    # ---------------------------------------------------------
+    # 2. Order amount validation
+    # ---------------------------------------------------------
 
-        if result["success"]:
-            print(f"✅ PASS : {name}")
-            passed += 1
-        else:
-            print(f"❌ FAIL : {name}")
-            failed += 1
+    print("\n[2] Amount validation")
 
-    print("\n======================================")
-    print(" VALIDATION SUMMARY")
-    print("======================================")
+    invalid_amounts = silver_df.filter(
+    (col("operation") != "d")
+    & (
+        col("total_amount").isNull()
+        | (col("total_amount") < 0)
+    )
+    ).count()
 
-    print(f"Total Checks : {len(expectations)}")
-    print(f"Passed       : {passed}")
-    print(f"Failed       : {failed}")
+    print(f"Invalid amounts: {invalid_amounts}")
 
-    if failed == 0:
-        print("\n🎉 ALL DATA QUALITY CHECKS PASSED")
-        return True
+    if invalid_amounts > 0:
+        raise ValueError(
+            "Data quality failed: invalid total_amount values found."
+        )
 
-    print("\n❌ DATA QUALITY CHECKS FAILED")
-    return False
+    # ---------------------------------------------------------
+    # 3. Order status validation
+    # ---------------------------------------------------------
+
+    print("\n[3] Order status validation")
+
+    valid_statuses = [
+        "PLACED",
+        "CONFIRMED",
+        "SHIPPED",
+        "DELIVERED",
+        "CANCELLED",
+    ]
+
+    invalid_statuses = silver_df.filter(
+        ~upper(col("order_status")).isin(valid_statuses)
+    ).count()
+
+    print(f"Invalid order statuses: {invalid_statuses}")
+
+    if invalid_statuses > 0:
+        raise ValueError(
+            "Data quality failed: invalid order_status values found."
+        )
+
+    # ---------------------------------------------------------
+    # 4. CDC operation validation
+    # ---------------------------------------------------------
+
+    print("\n[4] CDC operation validation")
+
+    valid_operations = ["c", "u", "d", "r"]
+
+    invalid_operations = silver_df.filter(
+        ~col("operation").isin(valid_operations)
+    ).count()
+
+    print(f"Invalid CDC operations: {invalid_operations}")
+
+    if invalid_operations > 0:
+        raise ValueError(
+            "Data quality failed: invalid CDC operation values found."
+        )
+
+    # ---------------------------------------------------------
+    # 5. Duplicate CDC event validation
+    # ---------------------------------------------------------
+
+    print("\n[5] Duplicate CDC event validation")
+
+    duplicate_events = (
+        silver_df
+        .groupBy(
+            "kafka_topic",
+            "kafka_partition",
+            "kafka_offset",
+        )
+        .agg(
+            count("*").alias("record_count")
+        )
+        .filter(col("record_count") > 1)
+        .count()
+    )
+
+    print(f"Duplicate Kafka events: {duplicate_events}")
+
+    if duplicate_events > 0:
+        raise ValueError(
+            "Data quality failed: duplicate Kafka events detected."
+        )
+
+    # ---------------------------------------------------------
+    # 6. CDC operation summary
+    # ---------------------------------------------------------
+
+    print("\n[6] CDC operation summary")
+
+    (
+        silver_df
+        .groupBy("operation")
+        .count()
+        .orderBy("operation")
+        .show()
+    )
+
+    # ---------------------------------------------------------
+    # 7. Data quality metrics
+    # ---------------------------------------------------------
+
+    print("\n[7] Data quality metrics")
+
+    quality_metrics = silver_df.select(
+        count("*").alias("total_records"),
+        spark_sum(
+            col("order_id").isNull().cast("int")
+        ).alias("null_order_ids"),
+        spark_sum(
+            col("customer_id").isNull().cast("int")
+        ).alias("null_customer_ids"),
+    ).collect()[0]
+
+    print(f"Total records     : {quality_metrics['total_records']}")
+    print(f"Null order IDs    : {quality_metrics['null_order_ids']}")
+    print(f"Null customer IDs : {quality_metrics['null_customer_ids']}")
+
+    print("\n" + "=" * 60)
+    print("DATA QUALITY VALIDATION PASSED")
+    print("=" * 60)
+
+    spark.stop()
 
 
 if __name__ == "__main__":
-
-    success = run_quality_checks()
-
-    if not success:
-        sys.exit(1)
+    main()

@@ -13,11 +13,43 @@ with DAG(
     tags=["ecommerce", "cdc", "spark", "iceberg"],
 ) as dag:
 
+    def check_bronze_ready():
+        import os
+
+        bronze_path = "/opt/project/data/bronze/debezium_orders"
+
+        if not os.path.exists(bronze_path):
+            raise FileNotFoundError(
+                f"Bronze data path does not exist: {bronze_path}"
+        )
+
+        files = [
+            file
+            for file in os.listdir(bronze_path)
+            if file.endswith(".parquet")
+        ]
+
+        if not files:
+            raise RuntimeError(
+            "Bronze data path exists but contains no Parquet files."
+        )
+
+        print(f"Bronze layer ready: {len(files)} Parquet files found.")
+
+    bronze_ready = PythonOperator(
+        task_id="bronze_ready",
+        python_callable=check_bronze_ready,
+    )
+
     cdc_silver = SparkSubmitOperator(
         task_id="cdc_silver",
         application="/opt/project/spark/jobs/debezium_orders_silver.py",
         conn_id="spark_default",
         name="cdc_silver",
+        driver_memory="512m",
+        executor_memory="1g",
+        executor_cores=2,
+        num_executors=1,
         verbose=True,
     )
 
@@ -43,16 +75,34 @@ with DAG(
         conn_id="spark_default",
         name="cdc_iceberg_merge",
         jars="/opt/airflow/jars/iceberg-spark-runtime-4.0_2.13-1.10.1.jar",
+        driver_memory="512m",
+        executor_memory="1g",
+        executor_cores=2,
+        num_executors=1,
         verbose=True,
     )
+
+
+    gold_prepare = SparkSubmitOperator(
+        task_id="gold_prepare",
+        application="/opt/project/spark/jobs/gold_prepare.py",
+        conn_id="spark_default",
+        name="gold_prepare",
+        jars="/opt/airflow/jars/iceberg-spark-runtime-4.0_2.13-1.10.1.jar",
+        driver_memory="512m",
+        verbose=True,
+
+)
 
     gold_daily_sales = SparkSubmitOperator(
         task_id="gold_daily_sales",
-        application="/opt/project/spark/jobs/iceberg_gold_daily_sales.py",
+        application="/opt/project/spark/jobs/gold_daily_sales.py",
         conn_id="spark_default",
         name="gold_daily_sales",
         jars="/opt/airflow/jars/iceberg-spark-runtime-4.0_2.13-1.10.1.jar",
+        driver_memory="512m",
         verbose=True,
-    )
+)
 
-    cdc_silver >> cdc_quality >> cdc_iceberg >> gold_daily_sales
+
+    bronze_ready >> cdc_silver >> cdc_quality >> cdc_iceberg >> gold_prepare >> gold_daily_sales

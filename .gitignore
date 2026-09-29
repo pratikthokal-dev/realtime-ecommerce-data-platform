@@ -13,9 +13,10 @@ __pycache__/
 # Data
 data/raw/*
 data/processed/*
-*.csv
-*.json
-*.parquet
+# Generated data files
+data/**/*.csv
+data/**/*.json
+data/**/*.parquet
 
 # IDE
 .vscode/
@@ -38,6 +39,9 @@ airflow.db*
 airflow/logs/
 *.db.backup
 
-#debezium-mysql-connector.json
+# Local Debezium connector configuration
 infrastructure/docker/debezium-mysql-connector.json
 
+
+
+infrastructure/docker/debezium-orders-v2.json

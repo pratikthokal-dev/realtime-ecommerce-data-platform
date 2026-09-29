@@ -301,7 +301,8 @@ realtime-ecommerce-data-platform/
 │       ├── debezium_orders_streaming.py
 │       ├── debezium_orders_silver.py
 │       ├── debezium_orders_iceberg_incremental.py
-│       └── iceberg_gold_daily_sales.py
+│       ├── gold_prepare.py
+│       └── gold_daily_sales.py
 │
 ├── quality/
 │   └── checks/

@@ -10,6 +10,8 @@ from pyspark.sql.window import Window
 spark = (
     SparkSession.builder
     .appName("DebeziumOrdersIcebergIncremental")
+
+    # Iceberg catalog configuration
     .config(
         "spark.sql.catalog.local",
         "org.apache.iceberg.spark.SparkCatalog"
@@ -22,8 +24,15 @@ spark = (
         "spark.sql.catalog.local.warehouse",
         "/opt/project/data/iceberg"
     )
+
+    # Resource control
+    .config("spark.sql.shuffle.partitions", "2")
+    .config("spark.default.parallelism", "2")
+    .config("spark.sql.adaptive.enabled", "true")
+
     .getOrCreate()
 )
+
 
 spark.sparkContext.setLogLevel("WARN")
 
@@ -400,9 +409,8 @@ current_df = spark.sql(f"""
         event_date,
         kafka_offset
     FROM {ICEBERG_TABLE}
-    ORDER BY order_id
+    LIMIT 20
 """)
-
 
 current_df.show(
     20,

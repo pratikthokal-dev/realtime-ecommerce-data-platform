@@ -1,7 +1,6 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col,
-    to_date,
     count,
     sum,
     avg,
@@ -12,23 +11,38 @@ from pyspark.sql.functions import (
 
 spark = (
     SparkSession.builder
-    .appName("Iceberg Gold Daily Sales")
-    .config("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog")
-    .config("spark.sql.catalog.local.type", "hadoop")
-    .config("spark.sql.catalog.local.warehouse", "/opt/project/data/iceberg")
+    .master("local[2]")
+    .appName("GoldDailySales")
+    .config(
+        "spark.sql.catalog.local",
+        "org.apache.iceberg.spark.SparkCatalog"
+    )
+    .config(
+        "spark.sql.catalog.local.type",
+        "hadoop"
+    )
+    .config(
+        "spark.sql.catalog.local.warehouse",
+        "/opt/project/data/iceberg"
+    )
+    .config("spark.sql.shuffle.partitions", "2")
+    .config("spark.default.parallelism", "2")
+    .config("spark.sql.adaptive.enabled", "true")
     .getOrCreate()
 )
 
 spark.sparkContext.setLogLevel("WARN")
 
-print("Reading Iceberg current-state orders...")
+print("Reading Gold intermediate data...")
 
-orders_df = spark.table("local.ecommerce.orders_current")
+gold_input_df = spark.read.parquet(
+    "file:///opt/project/data/gold/intermediate_orders"
+)
+
+print("Running daily sales aggregation...")
 
 gold_df = (
-    orders_df
-    .filter(col("order_status") != "cancelled")
-    .withColumn("sales_date", to_date(col("order_timestamp")))
+    gold_input_df
     .groupBy("sales_date")
     .agg(
         count("order_id").alias("total_orders"),
@@ -39,8 +53,7 @@ gold_df = (
     .orderBy("sales_date")
 )
 
-print("Gold daily sales:")
-gold_df.show(50, truncate=False)
+print("Writing Gold Iceberg table...")
 
 spark.sql("""
 CREATE NAMESPACE IF NOT EXISTS local.ecommerce
@@ -58,16 +71,10 @@ USING iceberg
 PARTITIONED BY (sales_date)
 """)
 
-# Replace the current Gold snapshot.
 gold_df.writeTo(
     "local.ecommerce.daily_sales"
 ).overwritePartitions()
 
 print("Gold Iceberg table updated successfully.")
-
-print("Current Gold table:")
-spark.table("local.ecommerce.daily_sales") \
-    .orderBy("sales_date") \
-    .show(50, truncate=False)
 
 spark.stop()

@@ -111,24 +111,28 @@ debezium_schema = StructType([
 # ---------------------------------------------------------
 # 7. Parse Debezium JSON
 # ---------------------------------------------------------
-
 parsed_df = json_df.select(
+    col("json").alias("raw_json"),
+
     from_json(
         col("json"),
         debezium_schema
     ).alias("data"),
+
     col("topic"),
     col("partition"),
     col("offset"),
     col("timestamp")
 )
 
-
 # ---------------------------------------------------------
-# 8. Extract CDC fields
+# 8. Extract CDC fields and identify invalid records
 # ---------------------------------------------------------
 
-cdc_structured_df = parsed_df.select(
+parsed_with_status_df = parsed_df.select(
+    col("raw_json"),
+    col("data"),
+
     col("data.payload.before").alias("before"),
     col("data.payload.after").alias("after"),
     col("data.payload.op").alias("operation"),
@@ -140,12 +144,50 @@ cdc_structured_df = parsed_df.select(
     col("timestamp").alias("kafka_timestamp")
 )
 
+valid_cdc_df = parsed_with_status_df.filter(
+    col("data").isNotNull()
+)
+
+invalid_cdc_df = parsed_with_status_df.filter(
+    col("data").isNull()
+)
 
 # ---------------------------------------------------------
-# 9. Create Bronze CDC output
+# 9. Write invalid CDC records to DLQ
 # ---------------------------------------------------------
 
-bronze_df = cdc_structured_df.select(
+dlq_df = invalid_cdc_df.select(
+    col("raw_json").alias("value"),
+    col("topic"),
+    col("partition"),
+    col("offset"),
+    col("kafka_timestamp")
+)
+
+dlq_query = (
+    dlq_df
+    .selectExpr(
+        "CAST(NULL AS STRING) AS key",
+        "value"
+    )
+    .writeStream
+    .format("kafka")
+    .option("kafka.bootstrap.servers", "kafka:29092")
+    .option("topic", "ecommerce.orders.dlq")
+    .option(
+        "checkpointLocation",
+        "/opt/project/data/spark-checkpoints/debezium_orders_dlq"
+    )
+    .outputMode("append")
+    .start()
+)
+
+
+# ---------------------------------------------------------
+# 10. Create Bronze CDC output
+# ---------------------------------------------------------
+
+bronze_df = valid_cdc_df.select(
     col("operation"),
     col("event_timestamp"),
 
@@ -173,7 +215,7 @@ bronze_df = cdc_structured_df.select(
 )
 
 # ---------------------------------------------------------
-# 10. Write Bronze CDC data
+# 11. Write Bronze CDC data
 # ---------------------------------------------------------
 
 query = (
@@ -193,7 +235,37 @@ query = (
 
 
 # ---------------------------------------------------------
-# 11. Keep streaming query alive
+# 12. Keep streaming query alive
 # ---------------------------------------------------------
 
-query.awaitTermination()
+# ---------------------------------------------------------
+# 12. Keep streaming queries alive
+# ---------------------------------------------------------
+
+print("DLQ query started:", dlq_query.id, flush=True)
+print("Bronze query started:", query.id, flush=True)
+
+print("DLQ query active:", dlq_query.isActive, flush=True)
+print("Bronze query active:", query.isActive, flush=True)
+
+print("DLQ query status:", dlq_query.status, flush=True)
+print("Bronze query status:", query.status, flush=True)
+
+# Diagnostic monitoring
+while True:
+    print("\n========== STREAMING STATUS ==========", flush=True)
+
+    print("DLQ active:", dlq_query.isActive, flush=True)
+    print("Bronze active:", query.isActive, flush=True)
+
+    print("DLQ status:", dlq_query.status, flush=True)
+    print("Bronze status:", query.status, flush=True)
+
+    print("DLQ exception:", dlq_query.exception(), flush=True)
+    print("Bronze exception:", query.exception(), flush=True)
+
+    print("DLQ last progress:", dlq_query.lastProgress, flush=True)
+    print("Bronze last progress:", query.lastProgress, flush=True)
+
+    import time
+    time.sleep(10)
