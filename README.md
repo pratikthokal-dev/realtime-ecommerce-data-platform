@@ -205,7 +205,7 @@ The platform follows a **Medallion-style architecture** to progressively transfo
 
 * **Containerized Infrastructure:** Runs the core streaming, processing, orchestration, and serving infrastructure using Docker and Docker Compose.
 
-**Failure Handling:** Uses a dedicated Kafka Dead-Letter Queue (`ecommerce.orders.dlq`) to isolate problematic CDC events for investigation and recovery.
+ * **Failure Handling:** Uses a dedicated Kafka Dead-Letter Queue (`ecommerce.orders.dlq`) to isolate problematic CDC events for investigation and recovery.
 
 ## 🛠️ Technology Stack
 
