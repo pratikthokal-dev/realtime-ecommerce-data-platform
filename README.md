@@ -205,6 +205,7 @@ The platform follows a **Medallion-style architecture** to progressively transfo
 
 * **Containerized Infrastructure:** Runs the core streaming, processing, orchestration, and serving infrastructure using Docker and Docker Compose.
 
+**Failure Handling:** Uses a dedicated Kafka Dead-Letter Queue (`ecommerce.orders.dlq`) to isolate problematic CDC events for investigation and recovery.
 
 ## 🛠️ Technology Stack
 
@@ -491,8 +492,6 @@ This makes the processing workflow reproducible, dependency-aware, and easier to
 * **Cloud Monitoring:** Add centralized monitoring, alerting, and operational observability using AWS services.
 
 * **CI/CD:** Introduce automated build, testing, and deployment workflows using GitHub Actions.
-
-* **Failure Recovery:** Add a dedicated Dead-Letter Queue (DLQ) and stronger recovery mechanisms for failed CDC events.
 
 * **Expanded Testing:** Extend the existing automated tests with broader unit, integration, and end-to-end coverage.
 
